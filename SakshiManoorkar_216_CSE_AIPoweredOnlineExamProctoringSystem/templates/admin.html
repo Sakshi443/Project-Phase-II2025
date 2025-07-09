@@ -1,0 +1,261 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8" />
+  <title>Admin Dashboard | Approval Panel</title>
+  <style>
+    body {
+      font-family: 'Segoe UI', sans-serif;
+      background-color: #f3f4f6;
+      margin: 0;
+      padding: 2rem;
+    }
+
+    h1 {
+      color: #111827;
+    }
+
+    button {
+      background-color: #3b82f6;
+      color: white;
+      border: none;
+      padding: 0.4rem 0.8rem;
+      border-radius: 4px;
+      cursor: pointer;
+      font-size: 0.9rem;
+    }
+
+    button:hover {
+      background-color: #2563eb;
+    }
+
+    button:disabled {
+      background-color: #94a3b8;
+      cursor: not-allowed;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      background-color: white;
+      margin-top: 1rem;
+      border-radius: 6px;
+      overflow: hidden;
+      box-shadow: 0 2px 6px rgba(0, 0, 0, 0.05);
+    }
+
+    th,
+    td {
+      padding: 0.75rem;
+      text-align: left;
+      border-bottom: 1px solid #e5e7eb;
+    }
+
+    th {
+      background-color: #f9fafb;
+      color: #374151;
+      font-weight: 600;
+      font-size: 0.85rem;
+      text-transform: uppercase;
+    }
+
+    .section {
+      margin-top: 3rem;
+    }
+
+    .flex {
+      display: flex;
+      gap: 2rem;
+    }
+
+    .half {
+      flex: 1;
+    }
+
+    .section h2 {
+      margin-bottom: 0.5rem;
+      color: #111827;
+      font-size: 1.2rem;
+    }
+
+    .logout-btn {
+      float: right;
+      background-color: #ef4444;
+    }
+
+    .logout-btn:hover {
+      background-color: #dc2626;
+    }
+  </style>
+</head>
+
+<body>
+  <h1>👤 Pending Teacher Approvals
+    <button onclick="signOut()" class="logout-btn">Logout</button>
+  </h1>
+
+  <table id="pendings">
+    <thead>
+      <tr>
+        <th>Username</th>
+        <th>Email</th>
+        <th>Actions</th>
+      </tr>
+    </thead>
+    <tbody></tbody>
+  </table>
+
+  <div class="section flex">
+    <div class="half">
+      <h2>✅ Approved Proctors</h2>
+      <table>
+        <thead>
+          <tr>
+            <th>Username</th>
+            <th>Email</th>
+            <th>Registered On</th>
+          </tr>
+        </thead>
+        <tbody id="approvedProctors"></tbody>
+      </table>
+    </div>
+    <div class="half">
+      <h2>🎓 Approved Students</h2>
+      <table>
+        <thead>
+          <tr>
+            <th>Username</th>
+            <th>Email</th>
+            <th>Registered On</th>
+          </tr>
+        </thead>
+        <tbody id="approvedStudents"></tbody>
+      </table>
+    </div>
+  </div>
+
+  <script type="module">
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/9.22.0/firebase-app.js";
+    import {
+      getAuth,
+      onAuthStateChanged,
+      signOut as fbSignOut
+    } from "https://www.gstatic.com/firebasejs/9.22.0/firebase-auth.js";
+    import {
+      getFirestore,
+      collection,
+      query,
+      where,
+      getDocs,
+      updateDoc,
+      deleteDoc,
+      doc
+    } from "https://www.gstatic.com/firebasejs/9.22.0/firebase-firestore.js";
+
+    const firebaseConfig = {
+      apiKey: "AIzaSyAg-Qc46CzCYdN_JGayHuR7xYxlsryUpZc",
+      authDomain: "proctored-system.firebaseapp.com",
+      projectId: "proctored-system",
+      storageBucket: "proctored-system.appspot.com",
+      messagingSenderId: "512898908874",
+      appId: "1:512898908874:web:23584b6cad04eb9e0c2a33",
+      measurementId: "G-3SL8C6C8RD",
+    };
+
+    const app = initializeApp(firebaseConfig);
+    const auth = getAuth(app);
+    const db = getFirestore(app);
+
+    onAuthStateChanged(auth, user => {
+      if (!user || user.email !== "mmanoorkar9@gmail.com") {
+        location.href = "index.html";
+      } else {
+        loadPending();
+        loadApprovedUsers();
+      }
+    });
+
+    async function loadPending() {
+      const tbody = document.querySelector('#pendings tbody');
+      tbody.innerHTML = '';
+      const q = query(
+        collection(db, "users"),
+        where("role", "==", "teacher"),
+        where("approved", "==", false)
+      );
+      const snap = await getDocs(q);
+      snap.forEach(docSnap => {
+        const { username, email } = docSnap.data();
+        const tr = document.createElement('tr');
+        tr.innerHTML = `
+          <td>${username}</td>
+          <td>${email}</td>
+          <td>
+            <button class="approve" data-id="${docSnap.id}">Approve</button>
+            <button class="reject" data-id="${docSnap.id}">Reject</button>
+          </td>
+        `;
+        tbody.appendChild(tr);
+      });
+
+      tbody.addEventListener('click', async e => {
+        const btn = e.target;
+        const uid = btn.dataset.id;
+        if (!uid) return;
+
+        if (btn.classList.contains('approve')) {
+          await updateDoc(doc(db, "users", uid), { approved: true });
+          btn.textContent = "Approved";
+          btn.disabled = true;
+          btn.nextElementSibling.disabled = true;
+        }
+
+        if (btn.classList.contains('reject')) {
+          const confirmed = confirm("Are you sure you want to reject this user?");
+          if (confirmed) {
+            await deleteDoc(doc(db, "users", uid));
+            btn.closest("tr").remove();
+          }
+        }
+      });
+    }
+
+    async function loadApprovedUsers() {
+      const proctorsTbody = document.getElementById("approvedProctors");
+      const studentsTbody = document.getElementById("approvedStudents");
+
+      const [proctorsSnap, studentsSnap] = await Promise.all([
+        getDocs(query(collection(db, "users"), where("role", "==", "teacher"), where("approved", "==", true))),
+        getDocs(query(collection(db, "users"), where("role", "==", "student"), where("approved", "==", true)))
+      ]);
+
+      proctorsSnap.forEach(docSnap => {
+        const { username, email, createdAt } = docSnap.data();
+        const tr = document.createElement('tr');
+        tr.innerHTML = `
+          <td>${username}</td>
+          <td>${email}</td>
+          <td>${createdAt ? createdAt.toDate().toLocaleString() : '-'}</td>
+        `;
+        proctorsTbody.appendChild(tr);
+      });
+
+      studentsSnap.forEach(docSnap => {
+        const { username, email, createdAt } = docSnap.data();
+        const tr = document.createElement('tr');
+        tr.innerHTML = `
+          <td>${username}</td>
+          <td>${email}</td>
+          <td>${createdAt ? createdAt.toDate().toLocaleString() : '-'}</td>
+        `;
+        studentsTbody.appendChild(tr);
+      });
+    }
+
+    // 🚪 Sign out
+    window.signOut = () => fbSignOut(auth).then(() => location.href = "index.html");
+  </script>
+</body>
+
+</html>
